@@ -1,0 +1,4 @@
+*.egg-info
+.idea
+watch_runner/__pycache__
+build/

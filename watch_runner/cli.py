@@ -1,13 +1,21 @@
-import pprint
 import time
 import fnmatch
 import argparse
 import subprocess
 from pathlib import Path
-import pprint
 
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+
+from watchdog.events import (
+    FileSystemEventHandler,
+    FileModifiedEvent,
+    FileCreatedEvent,
+    FileDeletedEvent,
+    FileMovedEvent,
+)
+
+import threading
+
 
 def load_ignore_patterns(config_file: Path):
     """
@@ -19,6 +27,7 @@ def load_ignore_patterns(config_file: Path):
     Example:
         ignore = *.log
         ignore = node_modules
+        or with unison ignore = Name *.bak
 
     Args:
         config_file (Path): Path to the configuration file.
@@ -75,21 +84,23 @@ class Handler(FileSystemEventHandler):
     - Executes a command on file changes
     """
 
-    def __init__(self, patterns, command, watch_dir: Path, debounce):
+    def __init__(self, ignore_patterns, command, watch_dir: Path, debounce):
         """
         Initialize the handler.
 
         Args:
-            patterns (list[str]): Ignore patterns.
+            ignore_patterns (list[str]): Ignore ignore_patterns.
             command (str): Command to execute on change.
             watch_dir (Path): Root directory being watched.
             debounce (float): Minimum delay between command executions (seconds).
         """
-        self.patterns = patterns
+        self.ignore_patterns = ignore_patterns
         self.command = command
         self.watch_dir = watch_dir
         self.debounce = debounce
-        self.last_run = 0
+
+        self.timer = None
+        self.lock = threading.Lock()
 
     def on_any_event(self, event):
         """
@@ -101,29 +112,31 @@ class Handler(FileSystemEventHandler):
         - Applies debounce logic
         - Executes the configured command
         """
-        if event.event_type not in ["modified", "created", "deleted", "moved"]:
-            return
-
-        if event.is_directory:
-            return
-
         try:
             path = Path(str(event.src_path)).relative_to(self.watch_dir)
         except ValueError:
-            return  # outside watched directory
-
-        if is_ignored(path, self.patterns):
             return
 
-        now = time.time()
-
-        if now - self.last_run < self.debounce:
+        if is_ignored(path, self.ignore_patterns):
             return
 
-        self.last_run = now
+        print(f"[{time.ctime()}] {event.event_type} on {event.src_path}")
 
-        print(f" ==== [{time.ctime()}] {event.event_type} on {event.src_path}")
+        self._schedule_command()
 
+    def _schedule_command(self):
+        with self.lock:
+            if self.timer:
+                self.timer.cancel()
+
+            self.timer = threading.Timer(self.debounce, self._run_command)
+            self.timer.start()
+
+    def _run_command(self):
+        with self.lock:
+            self.timer = None
+
+        print(f"[{time.ctime()}] Running command...")
         subprocess.run(self.command, shell=True)
 
 
@@ -187,7 +200,14 @@ def main():
     )
 
     observer = Observer()
-    observer.schedule(event_handler, str(args.watch_dir), recursive=True)
+    observer.schedule(event_handler, path=str(args.watch_dir), recursive=True,
+                    event_filter=[
+                        FileModifiedEvent,
+                        FileCreatedEvent,
+                        FileDeletedEvent,
+                        FileMovedEvent,
+                    ],
+                    )
 
     observer.start()
     print(f"Watching {args.watch_dir}... (debounce={args.debounce}s)")
