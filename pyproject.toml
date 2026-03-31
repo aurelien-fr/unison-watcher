@@ -1,0 +1,11 @@
+[project]
+name = "watch-runner"
+version = "1.0.0"
+
+
+dependencies = [
+    "watchdog"
+]
+
+[project.scripts]
+watch-runner = "watch_runner.cli:main"
