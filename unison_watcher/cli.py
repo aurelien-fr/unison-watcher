@@ -221,14 +221,19 @@ def main():
     patterns = load_ignore_patterns(cfg_file)
     watch_dir = load_watched_dir(cfg_file)
 
+    cli_cmd = f"unison {args.profilename}"
+    if args.options is not None:
+        cli_cmd += f" {args.options}"
+
     print(f"===================================================================")
     print(f"Watched folder: {watch_dir}")
     print(f"Ignored patterns: {patterns}")
+    print(f"Launched command: {cli_cmd}")
     print(f"===================================================================")
 
     event_handler = Handler(
         patterns,
-        f"unison {args.profilename} {args.options}",
+        cli_cmd,
         watch_dir,
         args.debounce
     )
