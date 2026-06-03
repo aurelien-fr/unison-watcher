@@ -7,4 +7,4 @@ dependencies = [
 ]
 
 [project.scripts]
-unison-watcher = "unison-watcher.cli:main"
+unison-watcher = "unison_watcher.cli:main"
