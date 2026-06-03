@@ -22,7 +22,7 @@ def is_local_dir(p: str) -> bool:
     return Path(p).is_dir()
 
 
-def load_ignore_patterns(config_file: Path):
+def load_ignore_patterns(u_profile_file: Path):
     """
     Load ignore patterns from a unison profilename file.
 
@@ -35,17 +35,17 @@ def load_ignore_patterns(config_file: Path):
         or with unison ignore = Name *.bak
 
     Args:
-        config_file (Path): Path to the configuration file.
+        u_profile_file (Path): Path to the configuration file.
 
     Returns:
         list[str]: A list of ignore patterns (glob-style).
     """
     patterns = []
 
-    if not config_file.is_file():
-        raise FileNotFoundError("No config file found")
+    if not u_profile_file.is_file():
+        raise FileNotFoundError(f"{u_profile_file} does not exist")
 
-    with config_file.open("r") as f:
+    with u_profile_file.open("r") as f:
         for line in f:
             line = line.strip()
 
@@ -57,20 +57,20 @@ def load_ignore_patterns(config_file: Path):
     return patterns
 
 
-def load_watched_dir(config_file: Path) -> Path:
+def load_watched_dir(u_profile_file: Path) -> Path:
     """
     Load local watched directory from a unison profilename file.
 
     Args:
-        config_file (Path): Path to the configuration file.
+        u_profile_file (Path): Path to the configuration file.
     """
 
     root_dirs = []
 
-    if not config_file.is_file():
-        raise FileNotFoundError("No config file found")
+    if not u_profile_file.is_file():
+        raise FileNotFoundError(f"{u_profile_file} does not exist")
 
-    with config_file.open("r") as f:
+    with u_profile_file.open("r") as f:
         for line in f:
             line = line.strip()
 
@@ -192,6 +192,7 @@ def main():
                         help="Unison profilename, passed to unison call")
 
     parser.add_argument("options",
+                        nargs="?",
                         help="Unison options, passed to unison call")
 
     parser.add_argument(
