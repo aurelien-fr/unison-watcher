@@ -2,6 +2,7 @@ import time
 import fnmatch
 import argparse
 import subprocess
+import os
 from pathlib import Path
 
 from watchdog.observers import Observer
@@ -17,9 +18,13 @@ from watchdog.events import (
 import threading
 
 
+def is_local_dir(p: str) -> bool:
+    return Path(p).is_dir()
+
+
 def load_ignore_patterns(config_file: Path):
     """
-    Load ignore patterns from a configuration file.
+    Load ignore patterns from a unison profilename file.
 
     The config file should contain lines in the following format:
         ignore = pattern
@@ -37,19 +42,48 @@ def load_ignore_patterns(config_file: Path):
     """
     patterns = []
 
-    if not config_file:
-        return patterns
+    if not config_file.is_file():
+        raise FileNotFoundError("No config file found")
 
     with config_file.open("r") as f:
         for line in f:
             line = line.strip()
 
-            if line.startswith("ignore ="):
+            if line.startswith("ignore"):
                 pattern = line.split("=")[-1].strip()
-                pattern = pattern.split(" ")[-1].strip()
+                pattern = pattern.replace(" ", "")
                 patterns.append(pattern)
 
     return patterns
+
+
+def load_watched_dir(config_file: Path) -> Path:
+    """
+    Load local watched directory from a unison profilename file.
+
+    Args:
+        config_file (Path): Path to the configuration file.
+    """
+
+    root_dirs = []
+
+    if not config_file.is_file():
+        raise FileNotFoundError("No config file found")
+
+    with config_file.open("r") as f:
+        for line in f:
+            line = line.strip()
+
+            if line.startswith("root"):
+                pattern = line.split("=")[-1].strip()
+                pattern = pattern.replace(" ", "")
+                root_dirs.append(pattern)
+
+    for root in root_dirs:
+        if is_local_dir(root):
+            return Path(root)
+
+    return Path()
 
 
 def is_ignored(path: Path, patterns):
@@ -142,38 +176,23 @@ class Handler(FileSystemEventHandler):
 
 def main():
     """
-    Main entry point of the file watcher.
+    Main entry point of the unison file watcher.
 
     This function:
     - Parses CLI arguments
-    - Loads ignore patterns
+    - Loads ignore patterns and watched dir
     - Starts the file system observer
     - Keeps the process running until interrupted
     """
     parser = argparse.ArgumentParser(
-        description="File watcher with ignore rules and debounce"
+        description="Execute 'unison' when changes are made on watched directory, using unison configuration file"
     )
 
-    parser.add_argument(
-        "--cfg",
-        type=Path,
-        help="Configuration file (with ignore = ... rules)"
-    )
+    parser.add_argument("profilename",
+                        help="Unison profilename, passed to unison call")
 
-    parser.add_argument(
-        "-w",
-        "--watch-dir",
-        type=Path,
-        required=True,
-        help="Directory to watch"
-    )
-
-    parser.add_argument(
-        "-c",
-        "--command",
-        required=True,
-        help="Command to execute"
-    )
+    parser.add_argument("options",
+                        help="Unison options, passed to unison call")
 
     parser.add_argument(
         "-d",
@@ -185,32 +204,46 @@ def main():
 
     args = parser.parse_args()
 
-    patterns = load_ignore_patterns(args.cfg)
+    if not args.profilename:
+        parser.error("Unison profilename is mandatory. Create a .prf file under ~/.unison")
+
+    unison_env_dir = os.environ.get("UNISON")
+
+    if unison_env_dir is not None:
+        print(f"Using UNISON env var ({unison_env_dir})")
+        unison_home = Path(unison_env_dir)
+    else:
+        unison_home = Path.home() / ".unison"
+
+    cfg_file = Path((unison_home / args.profilename).with_suffix(".prf"))
+
+    patterns = load_ignore_patterns(cfg_file)
+    watch_dir = load_watched_dir(cfg_file)
 
     print(f"===================================================================")
-    print(f"Watched folder: {args.watch_dir}")
+    print(f"Watched folder: {watch_dir}")
     print(f"Ignored patterns: {patterns}")
     print(f"===================================================================")
 
     event_handler = Handler(
         patterns,
-        args.command,
-        args.watch_dir,
+        f"unison {args.profilename} {args.options}",
+        watch_dir,
         args.debounce
     )
 
     observer = Observer()
-    observer.schedule(event_handler, path=str(args.watch_dir), recursive=True,
-                    event_filter=[
-                        FileModifiedEvent,
-                        FileCreatedEvent,
-                        FileDeletedEvent,
-                        FileMovedEvent,
-                    ],
-                    )
+    observer.schedule(event_handler, path=str(watch_dir), recursive=True,
+                      event_filter=[
+                          FileModifiedEvent,
+                          FileCreatedEvent,
+                          FileDeletedEvent,
+                          FileMovedEvent,
+                      ],
+                      )
 
     observer.start()
-    print(f"Watching {args.watch_dir}... (debounce={args.debounce}s)")
+    print(f"Watching {watch_dir}... (debounce={args.debounce}s)")
 
     try:
         while True:

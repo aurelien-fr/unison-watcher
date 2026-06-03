@@ -1,4 +1,4 @@
 *.egg-info
 .idea
-watch_runner/__pycache__
+unison-watcher/__pycache__
 build/
