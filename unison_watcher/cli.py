@@ -1,21 +1,19 @@
-import time
-import fnmatch
 import argparse
-import subprocess
+import fnmatch
 import os
+import subprocess
+import threading
+import time
 from pathlib import Path
 
-from watchdog.observers import Observer
-
 from watchdog.events import (
-    FileSystemEventHandler,
-    FileModifiedEvent,
     FileCreatedEvent,
     FileDeletedEvent,
+    FileModifiedEvent,
     FileMovedEvent,
+    FileSystemEventHandler,
 )
-
-import threading
+from watchdog.observers import Observer
 
 
 def is_local_dir(p: str) -> bool:
@@ -51,9 +49,8 @@ def load_ignore_patterns(u_profile_file: Path):
 
             if line.startswith("ignore"):
                 pattern = line.split("=")[-1].strip()
-                pattern = pattern.replace(" ", "")
+                pattern = line.split(" ")[-1].strip()
                 patterns.append(pattern)
-
     return patterns
 
 
@@ -188,25 +185,26 @@ def main():
         description="Execute 'unison' when changes are made on watched directory, using unison configuration file"
     )
 
-    parser.add_argument("profilename",
-                        help="Unison profilename, passed to unison call")
+    parser.add_argument("profilename", help="Unison profilename, passed to unison call")
 
-    parser.add_argument("options",
-                        nargs="?",
-                        help="Unison options, passed to unison call")
+    parser.add_argument(
+        "options", nargs="?", help="Unison options, passed to unison call"
+    )
 
     parser.add_argument(
         "-d",
         "--debounce",
         type=float,
         default=0.5,
-        help="Delay between two executions (in seconds)"
+        help="Delay between two executions (in seconds)",
     )
 
     args = parser.parse_args()
 
     if not args.profilename:
-        parser.error("Unison profilename is mandatory. Create a .prf file under ~/.unison")
+        parser.error(
+            "Unison profilename is mandatory. Create a .prf file under ~/.unison"
+        )
 
     unison_env_dir = os.environ.get("UNISON")
 
@@ -231,22 +229,20 @@ def main():
     print(f"Launched command: {cli_cmd}")
     print(f"===================================================================")
 
-    event_handler = Handler(
-        patterns,
-        cli_cmd,
-        watch_dir,
-        args.debounce
-    )
+    event_handler = Handler(patterns, cli_cmd, watch_dir, args.debounce)
 
     observer = Observer()
-    observer.schedule(event_handler, path=str(watch_dir), recursive=True,
-                      event_filter=[
-                          FileModifiedEvent,
-                          FileCreatedEvent,
-                          FileDeletedEvent,
-                          FileMovedEvent,
-                      ],
-                      )
+    observer.schedule(
+        event_handler,
+        path=str(watch_dir),
+        recursive=True,
+        event_filter=[
+            FileModifiedEvent,
+            FileCreatedEvent,
+            FileDeletedEvent,
+            FileMovedEvent,
+        ],
+    )
 
     observer.start()
     print(f"Watching {watch_dir}... (debounce={args.debounce}s)")
