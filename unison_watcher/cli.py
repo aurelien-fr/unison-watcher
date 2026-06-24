@@ -132,6 +132,9 @@ class Handler(FileSystemEventHandler):
 
         self.timer = None
         self.lock = threading.Lock()
+        self.sync_lock = threading.Lock()
+        self.enabled = threading.Event()
+        self.enabled.set()
 
     def on_any_event(self, event):
         """
@@ -143,6 +146,9 @@ class Handler(FileSystemEventHandler):
         - Applies debounce logic
         - Executes the configured command
         """
+        if not self.enabled.is_set():
+            return
+
         try:
             path = Path(str(event.src_path)).relative_to(self.watch_dir)
         except ValueError:
@@ -155,20 +161,88 @@ class Handler(FileSystemEventHandler):
 
         self._schedule_command()
 
+
     def _schedule_command(self):
         with self.lock:
             if self.timer:
                 self.timer.cancel()
 
-            self.timer = threading.Timer(self.debounce, self._run_command)
+            self.timer = threading.Timer(self.debounce, self.sync)
             self.timer.start()
 
-    def _run_command(self):
-        with self.lock:
-            self.timer = None
 
-        print(f"[{time.ctime()}] Running command...")
-        subprocess.run(self.command, shell=True)
+    def sync(self, from_user=False):
+        if not self.sync_lock.acquire(blocking=False):
+            print("Sync already running")
+            return
+
+        try:
+            with self.lock:
+                self.timer = None
+
+            print(f"[{time.ctime()}] Running unison...")
+            subprocess.run(self.command, shell=True)
+
+            if not from_user:
+                print("> ")
+        finally:
+            self.sync_lock.release()
+
+
+    def pause(self):
+        self.enabled.clear()
+
+        with self.lock:
+            if self.timer:
+                self.timer.cancel()
+                self.timer = None
+
+        print("Watcher paused ⏸")
+
+
+    def resume(self):
+        self.enabled.set()
+        print("Watcher resumed ▶︎")
+
+
+    def toggle(self):
+        if self.enabled.is_set():
+            self.enabled.clear()
+            print("Watcher paused ⏸")
+        else:
+            self.enabled.set()
+            print("Watcher resumed ▶︎")
+
+
+def stdin_loop(handler):
+    help = """\
+stdin commands:
+s : sync now
+p : pause watching
+r : resume watching
+t : toggle pause/resume
+"""
+
+    print(help)
+
+    while True:
+        cmd = input("> ").strip().lower()
+
+        match cmd:
+            case "s":
+                handler.sync(True)
+
+            case "p":
+                handler.pause()
+
+            case "r":
+                handler.resume()
+
+            case "t":
+                handler.toggle()
+
+            case "h":
+                print(help)
 
 
 def main():
@@ -246,6 +320,8 @@ def main():
 
     observer.start()
     print(f"Watching {watch_dir}... (debounce={args.debounce}s)")
+
+    threading.Thread(target=stdin_loop, args=(event_handler,), daemon=True).start()
 
     try:
         while True:
