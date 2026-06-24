@@ -15,6 +15,9 @@ from watchdog.events import (
 )
 from watchdog.observers import Observer
 
+GREEN = "\033[32m"
+RED = "\033[31m"
+RESET = "\033[0m"
 
 def is_local_dir(p: str) -> bool:
     return Path(p).is_dir()
@@ -180,8 +183,19 @@ class Handler(FileSystemEventHandler):
             with self.lock:
                 self.timer = None
 
+            print("---------------------------------------------------------------")
             print(f"[{time.ctime()}] Running unison...")
-            subprocess.run(self.command, shell=True)
+            print("---------------------------------------------------------------")
+            ret = subprocess.run(self.command, shell=True)
+            print("---------------------------------------------------------------")
+            if ret.returncode == 0:
+                print(
+                    f"[{time.ctime()}] Unison completed {GREEN}successfully{RESET}"
+                )
+            else:
+                print(
+                    f"[{time.ctime()}] Unison {RED}failed{RESET} with exit code {ret.returncode}"
+                )
 
             if not from_user:
                 print("> ")
