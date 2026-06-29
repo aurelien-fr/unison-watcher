@@ -107,6 +107,24 @@ def is_ignored(path: Path, patterns):
 
     return False
 
+def walk(path, depth):
+    """Recursively list files and directories up to a certain depth
+
+    return Tuple with folder, and remaining depth (= 0 if specified max depth is reached)
+    """
+    depth -= 1
+    with os.scandir(path) as p:
+        for entry in p:
+            yield entry.path, depth
+            if entry.is_dir() and depth > 0:
+                yield from walk(entry.path, depth)
+
+
+def should_observe(path: Path, patterns: list[str]) -> bool:
+    if not path.is_dir():
+        return False
+    return not is_ignored(path, patterns)
+
 
 class Handler(FileSystemEventHandler):
     """
@@ -317,24 +335,29 @@ def main():
     print(f"Launched command: {cli_cmd}")
     print(f"===================================================================")
 
+    dir_list_tuple = walk(watch_dir.as_posix(), 2)
+    observer = Observer()
     event_handler = Handler(patterns, cli_cmd, watch_dir, args.debounce)
 
-    observer = Observer()
-    observer.schedule(
-        event_handler,
-        path=str(watch_dir),
-        recursive=True,
-        event_filter=[
-            FileModifiedEvent,
-            FileCreatedEvent,
-            FileDeletedEvent,
-            FileMovedEvent,
-        ],
-    )
+    print(f"Watching :")
+    for folder, remaining_depth in dir_list_tuple:
+        if should_observe(Path(str(folder)), patterns):
+            rec_str = " | (recursive)" if remaining_depth == 0 else ""
+            print(f" - {folder} {rec_str}")
+
+            observer.schedule(
+                event_handler,
+                path=str(folder),
+                recursive= (remaining_depth == 0),
+                event_filter=[
+                    FileModifiedEvent,
+                    FileCreatedEvent,
+                    FileDeletedEvent,
+                    FileMovedEvent,
+                ],
+            )
 
     observer.start()
-    print(f"Watching {watch_dir}... (debounce={args.debounce}s)")
-
     threading.Thread(target=stdin_loop, args=(event_handler,), daemon=True).start()
 
     try:
